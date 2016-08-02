@@ -1,0 +1,67 @@
+#!/bin/bash
+
+export ASM_SOURCES="start"
+export C_SOURCES="
+	main 
+	lib/stdio/kprintf 
+	lib/tty/tty 
+	lib/stdio/doprintf 
+	lib/string/string 
+	lib/stdlib/stdlib
+	lib/ds/bitmap 
+	cpu/page 	
+	cpu/interrupt 
+	cpu/handler 
+	cpu/cpuid
+	cpu/portio
+	cpu/pic
+	cpu/timer
+	cpu/cpu
+	mm/heap 
+	mm/heapchecker
+	process/process
+	process/testproc
+	drv/devmgr
+	drv/keyboard/keyboard
+	drv/block/floppy/floppy
+	"
+
+echo "=~=~=~=~=~| ASSEMBLER SOURCES |~=~=~=~=~=~="
+for asm in $ASM_SOURCES; do
+	echo "nasm -f aout -o $asm.o $asm.asm"
+	nasm -f aout -o $asm.o $asm.asm
+	echo
+done
+
+echo 
+echo "=~=~=~=~=~| C SOURCES |~=~=~=~=~=~="
+for c in $C_SOURCES; do
+	echo "gcc -Wall -O -fleading-underscore -fstrength-reduce -fomit-frame-pointer -finline-functions -nostdinc -fno-builtin -I./include -c -o $c.o $c.c"
+	gcc -g -Wall -O -fleading-underscore -fstrength-reduce -fomit-frame-pointer -finline-functions -nostdinc -fno-builtin -I./include -c -o $c.o $c.c
+done
+
+echo
+echo "=~=~=~=~=~| LINKING |~=~=~=~=~=~="
+OBJS=""
+O="$ASM_SOURCES $C_SOURCES"
+for o in $O; do
+	OBJS="$OBJS $o.o"
+done
+echo "ld -T linker/linker.ld -o img/kernel.bin $OBJS"
+ld -T linker/link.ld -o img/kernel.bin $OBJS
+
+echo
+echo "=~=~=~=~=~| EMBEDDING |~=~=~=~=~=~="
+echo "Embedding kernel in image..."
+mount -o loop img/lineos.img mnt
+cp img/kernel.bin mnt/
+
+echo
+echo "=~=~=~=~=~| CLEANING |~=~=~=~=~=~="
+umount mnt/
+for o in $O; do
+	rm -rf $o.o
+done
+
+echo Done!
+

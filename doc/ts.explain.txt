@@ -1,0 +1,344 @@
+After the first task switch, the stack is clean (during tast1 code)
+
+the stack is at 0xC000B06B which is the top of the stack
+
+by the time we get to switchTo for the second task switch, the stack looks like:
+ | STACK 0xc000bfef [0xc0002c1a] <--------- Return instruction pointer (c pushes this so it knows where to ret to)
+ | STACK 0xc000bff3 [0xc000b014] <--------- Address of new process structure (first argument)
+ | STACK 0xc000bff7 [0x00000020]
+ | STACK 0xc000bffb [0xc000c027]
+ | STACK 0xc000bfff [0xc0002510]
+ | STACK 0xc000c003 [0x00000060]
+ | STACK 0xc000c007 [0x00000000]
+ | STACK 0xc000c00b [0x00000000]
+ | STACK 0xc000c00f [0xc000222d]
+ | STACK 0xc000c013 [0xc000c027]
+ | STACK 0xc000c017 [0x00000020]
+ | STACK 0xc000c01b [0x00000000]
+ | STACK 0xc000c01f [0xc0000320]
+ | STACK 0xc000c023 [0xc000c027]
+ | STACK 0xc000c027 [0x00000008]
+ | STACK 0xc000c02b [0x00000008]
+ | STACK 0xc000c02f [0x00000008]
+ | STACK 0xc000c033 [0x00000008]
+ | STACK 0xc000c037 [0x00000008]
+ | STACK 0xc000c03b [0x00000008]
+ | STACK 0xc000c03f [0x00000000]
+ | STACK 0xc000c043 [0xc000c057]
+ | STACK 0xc000c047 [0x00000000]
+ | STACK 0xc000c04b [0x00000000]
+ | STACK 0xc000c04f [0x00000000]
+ | STACK 0xc000c053 [0x00000000]
+ | STACK 0xc000c057 [0x00000021]
+ | STACK 0xc000c05b [0x00000000]
+ | STACK 0xc000c05f [0xc000037c] <-------- Interrupt point EIP
+ | STACK 0xc000c063 [0x00000010] <-------- Interrupt point CS
+ | STACK 0xc000c067 [0x00000202] <-------- Interrupt point EFLAGS
+ | STACK 0xc000c06b [0xc000b014]
+
+switchTo:
+	Pop Return EIP into eax
+	Move &_k_proclist.current into ebx
+	
+	push eflags
+	push cs
+	push eax (Return EIP - This will *ALWAYS* be in schedule just after the switchTo call)
+
+	push segment registers (4)
+	push all regs (8)
+
+	save current esp into _k_proclist.current.esp
+	
+	<--- The state has now been saved, we can scribble all over our registers --->
+
+	get new process structure, this was passed to us as the first argument, its now way down in the stack
+	we pushed 15 times, each of 4 bytes = 60 bytes so the new process pointer is at [esp + 60]
+	move eax,[esp+60]
+	
+	set _k_proclist.current to the value in eax, _k_proclist.current now points to our new process_t structure
+
+	****SWITCH STACK****
+	Our new esp is in _k_proclist.current.esp, so load it into the cpu's esp
+	move esp, _k_proclist.current.esp
+
+	Before We Go On The stack now looks like this:
+
+
+ | STACK 0xc000bfb7 [0x00000008] <----------
+ | STACK 0xc000bfbb [0x00000008]           |
+ | STACK 0xc000bfbf [0x00000000]           |
+ | STACK 0xc000bfc3 [0xc000bfd7]           |
+ | STACK 0xc000bfc7 [0xc000b014]           |------ Saved General Purpose (from pushad)
+ | STACK 0xc000bfcb [0x00000020]           |
+ | STACK 0xc000bfcf [0x00000000]           |
+ | STACK 0xc000bfd3 [0xc0002c1a] <---------|
+ | STACK 0xc000bfd7 [0x00000008] <------------|
+ | STACK 0xc000bfdb [0x00000008] <            |---------- Saved Segment Registers
+ | STACK 0xc000bfdf [0xc0000008] <            |
+ | STACK 0xc000bfe3 [0xc0000008] <------------|
+ | STACK 0xc000bfe7 [0xc0002c1a] <--------- Saved EIP (Return EIP After switchTo in schedule
+ | STACK 0xc000bfeb [0xc0000010] <--------- Saved CS
+ | STACK 0xc000bfef [0x00000046] <--------- Saved EFLAGS
+ | STACK 0xc000bff3 [0xc000b014] <--------- Address of new process structure (first argument)
+ | STACK 0xc000bff7 [0x00000020]
+ | STACK 0xc000bffb [0xc000c027]
+ | STACK 0xc000bfff [0xc0002510]
+ | STACK 0xc000c003 [0x00000060]
+ | STACK 0xc000c007 [0x00000000]
+ | STACK 0xc000c00b [0x00000000]
+ | STACK 0xc000c00f [0xc000222d]
+ | STACK 0xc000c013 [0xc000c027]
+ | STACK 0xc000c017 [0x00000020]
+ | STACK 0xc000c01b [0x00000000]
+ | STACK 0xc000c01f [0xc0000320]
+ | STACK 0xc000c023 [0xc000c027]
+ | STACK 0xc000c027 [0x00000008]
+ | STACK 0xc000c02b [0x00000008]
+ | STACK 0xc000c02f [0x00000008]
+ | STACK 0xc000c033 [0x00000008]
+ | STACK 0xc000c037 [0x00000008]
+ | STACK 0xc000c03b [0x00000008]
+ | STACK 0xc000c03f [0x00000000]
+ | STACK 0xc000c043 [0xc000c057]
+ | STACK 0xc000c047 [0x00000000]
+ | STACK 0xc000c04b [0x00000000]
+ | STACK 0xc000c04f [0x00000000]
+ | STACK 0xc000c053 [0x00000000]
+ | STACK 0xc000c057 [0x00000021]
+ | STACK 0xc000c05b [0x00000000]
+ | STACK 0xc000c05f [0xc000037c] <-------- Interrupt point EIP
+ | STACK 0xc000c063 [0x00000010] <-------- Interrupt point CS
+ | STACK 0xc000c067 [0x00000202] <-------- Interrupt point EFLAGS
+ | STACK 0xc000c06b [0xc000b014]
+
+
+	Restore general purpose registers
+	Restore gs
+	Restore fs
+	Restore ds
+	Restore es
+	
+	The stack now looks like this:
+
+ | STACK 0xc000bfe7 [0xc0002c1a] <--------- Saved EIP (Return EIP After switchTo in schedule
+ | STACK 0xc000bfeb [0xc0000010] <--------- Saved CS
+ | STACK 0xc000bfef [0x00000046] <--------- Saved EFLAGS
+ | STACK 0xc000bff3 [0xc000b014] <--------- Address of new process structure (first argument)
+ | STACK 0xc000bff7 [0x00000020]
+ | STACK 0xc000bffb [0xc000c027]
+ | STACK 0xc000bfff [0xc0002510]
+ | STACK 0xc000c003 [0x00000060]
+ | STACK 0xc000c007 [0x00000000]
+ | STACK 0xc000c00b [0x00000000]
+ | STACK 0xc000c00f [0xc000222d]
+ | STACK 0xc000c013 [0xc000c027]
+ | STACK 0xc000c017 [0x00000020]
+ | STACK 0xc000c01b [0x00000000]
+ | STACK 0xc000c01f [0xc0000320]
+ | STACK 0xc000c023 [0xc000c027]
+ | STACK 0xc000c027 [0x00000008]
+ | STACK 0xc000c02b [0x00000008]
+ | STACK 0xc000c02f [0x00000008]
+ | STACK 0xc000c033 [0x00000008]
+ | STACK 0xc000c037 [0x00000008]
+ | STACK 0xc000c03b [0x00000008]
+ | STACK 0xc000c03f [0x00000000]
+ | STACK 0xc000c043 [0xc000c057]
+ | STACK 0xc000c047 [0x00000000]
+ | STACK 0xc000c04b [0x00000000]
+ | STACK 0xc000c04f [0x00000000]
+ | STACK 0xc000c053 [0x00000000]
+ | STACK 0xc000c057 [0x00000021]
+ | STACK 0xc000c05b [0x00000000]
+ | STACK 0xc000c05f [0xc000037c] <-------- Interrupt point EIP
+ | STACK 0xc000c063 [0x00000010] <-------- Interrupt point CS
+ | STACK 0xc000c067 [0x00000202] <-------- Interrupt point EFLAGS
+ | STACK 0xc000c06b [0xc000b014]
+
+	This means when we iret, we will return to the eflags, cs:eip stored on the stack
+	
+	That will put us back just after switchTo
+
+	The asm generated code adds 8 to esp as cleanup, this puts us at:
+
+ | STACK 0xc000bfff [0xc0002510] <---- Return EIP
+ | STACK 0xc000c003 [0x00000060]
+ | STACK 0xc000c007 [0x00000000]
+ | STACK 0xc000c00b [0x00000000]
+ | STACK 0xc000c00f [0xc000222d]
+ | STACK 0xc000c013 [0xc000c027]
+ | STACK 0xc000c017 [0x00000020]
+ | STACK 0xc000c01b [0x00000000]
+ | STACK 0xc000c01f [0xc0000320]
+ | STACK 0xc000c023 [0xc000c027]
+ | STACK 0xc000c027 [0x00000008]
+ | STACK 0xc000c02b [0x00000008]
+ | STACK 0xc000c02f [0x00000008]
+ | STACK 0xc000c033 [0x00000008]
+ | STACK 0xc000c037 [0x00000008]
+ | STACK 0xc000c03b [0x00000008]
+ | STACK 0xc000c03f [0x00000000]
+ | STACK 0xc000c043 [0xc000c057]
+ | STACK 0xc000c047 [0x00000000]
+ | STACK 0xc000c04b [0x00000000]
+ | STACK 0xc000c04f [0x00000000]
+ | STACK 0xc000c053 [0x00000000]
+ | STACK 0xc000c057 [0x00000021]
+ | STACK 0xc000c05b [0x00000000]
+ | STACK 0xc000c05f [0xc000037c] <-------- Interrupt point EIP
+ | STACK 0xc000c063 [0x00000010] <-------- Interrupt point CS
+ | STACK 0xc000c067 [0x00000202] <-------- Interrupt point EFLAGS
+ | STACK 0xc000c06b [0xc000b014]
+
+	When schedule() returns, it does a near return, so only EIP is popped off the stack
+
+	When schedule returns, we are then back inside the IRQ handler in this case _press
+
+	This leaves us with:
+
+ | STACK 0xc000c003 [0x00000060] <----------|
+ | STACK 0xc000c007 [0x00000000]            |---- 12 bytes used in schedule
+ | STACK 0xc000c00b [0x00000000] <----------|
+ | STACK 0xc000c00f [0xc000222d] <-------------- Return EIP
+ | STACK 0xc000c013 [0xc000c027]
+ | STACK 0xc000c017 [0x00000020]
+ | STACK 0xc000c01b [0x00000000]
+ | STACK 0xc000c01f [0xc0000320]
+ | STACK 0xc000c023 [0xc000c027]
+ | STACK 0xc000c027 [0x00000008]
+ | STACK 0xc000c02b [0x00000008]
+ | STACK 0xc000c02f [0x00000008]
+ | STACK 0xc000c033 [0x00000008]
+ | STACK 0xc000c037 [0x00000008]
+ | STACK 0xc000c03b [0x00000008]
+ | STACK 0xc000c03f [0x00000000]
+ | STACK 0xc000c043 [0xc000c057]
+ | STACK 0xc000c047 [0x00000000]
+ | STACK 0xc000c04b [0x00000000]
+ | STACK 0xc000c04f [0x00000000]
+ | STACK 0xc000c053 [0x00000000]
+ | STACK 0xc000c057 [0x00000021]
+ | STACK 0xc000c05b [0x00000000]
+ | STACK 0xc000c05f [0xc000037c] <-------- Interrupt point EIP
+ | STACK 0xc000c063 [0x00000010] <-------- Interrupt point CS
+ | STACK 0xc000c067 [0x00000202] <-------- Interrupt point EFLAGS
+ | STACK 0xc000c06b [0xc000b014]
+
+	The 12 bytes used in schedule are knocked off the stack by adding 12 to ESP
+
+	We then near RET, and are at 0xC000222d (The generic irq_handler)
+
+	This leaves us with:
+
+ | STACK 0xc000c013 [0xc000c027]
+ | STACK 0xc000c017 [0x00000020]
+ | STACK 0xc000c01b [0x00000000]
+ | STACK 0xc000c01f [0xc0000320] <-------- Return EIP (when we RET from irq_handler)
+ | STACK 0xc000c023 [0xc000c027]
+ | STACK 0xc000c027 [0x00000008]
+ | STACK 0xc000c02b [0x00000008]
+ | STACK 0xc000c02f [0x00000008]
+ | STACK 0xc000c033 [0x00000008]
+ | STACK 0xc000c037 [0x00000008]
+ | STACK 0xc000c03b [0x00000008]
+ | STACK 0xc000c03f [0x00000000]
+ | STACK 0xc000c043 [0xc000c057]
+ | STACK 0xc000c047 [0x00000000]
+ | STACK 0xc000c04b [0x00000000]
+ | STACK 0xc000c04f [0x00000000]
+ | STACK 0xc000c053 [0x00000000]
+ | STACK 0xc000c057 [0x00000021]
+ | STACK 0xc000c05b [0x00000000]
+ | STACK 0xc000c05f [0xc000037c] <-------- Interrupt point EIP
+ | STACK 0xc000c063 [0x00000010] <-------- Interrupt point CS
+ | STACK 0xc000c067 [0x00000202] <-------- Interrupt point EFLAGS
+ | STACK 0xc000c06b [0xc000b014]
+
+	Add 8 to esp, which gives us:
+
+ | STACK 0xc000c01b [0x00000000]
+ | STACK 0xc000c01f [0xc0000320] <-------- Return EIP (when we RET from irq_handler)
+ | STACK 0xc000c023 [0xc000c027]
+ | STACK 0xc000c027 [0x00000008]
+ | STACK 0xc000c02b [0x00000008]
+ | STACK 0xc000c02f [0x00000008]
+ | STACK 0xc000c033 [0x00000008]
+ | STACK 0xc000c037 [0x00000008]
+ | STACK 0xc000c03b [0x00000008]
+ | STACK 0xc000c03f [0x00000000]
+ | STACK 0xc000c043 [0xc000c057]
+ | STACK 0xc000c047 [0x00000000]
+ | STACK 0xc000c04b [0x00000000]
+ | STACK 0xc000c04f [0x00000000]
+ | STACK 0xc000c053 [0x00000000]
+ | STACK 0xc000c057 [0x00000021]
+ | STACK 0xc000c05b [0x00000000]
+ | STACK 0xc000c05f [0xc000037c] <-------- Interrupt point EIP
+ | STACK 0xc000c063 [0x00000010] <-------- Interrupt point CS
+ | STACK 0xc000c067 [0x00000202] <-------- Interrupt point EFLAGS
+ | STACK 0xc000c06b [0xc000b014]
+
+	Pop a value into ebx, which leaves us with
+
+ | STACK 0xc000c01f [0xc0000320] <-------- Return EIP (when we RET from irq_handler)
+ | STACK 0xc000c023 [0xc000c027] 
+ | STACK 0xc000c027 [0x00000008]
+ | STACK 0xc000c02b [0x00000008]
+ | STACK 0xc000c02f [0x00000008]
+ | STACK 0xc000c033 [0x00000008]
+ | STACK 0xc000c037 [0x00000008]
+ | STACK 0xc000c03b [0x00000008]
+ | STACK 0xc000c03f [0x00000000]
+ | STACK 0xc000c043 [0xc000c057]
+ | STACK 0xc000c047 [0x00000000]
+ | STACK 0xc000c04b [0x00000000]
+ | STACK 0xc000c04f [0x00000000]
+ | STACK 0xc000c053 [0x00000000]
+ | STACK 0xc000c057 [0x00000021]
+ | STACK 0xc000c05b [0x00000000]
+ | STACK 0xc000c05f [0xc000037c] <-------- Interrupt point EIP
+ | STACK 0xc000c063 [0x00000010] <-------- Interrupt point CS
+ | STACK 0xc000c067 [0x00000202] <-------- Interrupt point EFLAGS
+ | STACK 0xc000c06b [0xc000b014]	
+
+	We are now in 0xC0000320, which is back in the tail end of irq_common_stub
+
+	This gives us:
+
+ | STACK 0xc000c023 [0xc000c027] <-------- ESP (before last task switch, pushed before we call _irq_handler)
+ | STACK 0xc000c027 [0x00000008] 
+ | STACK 0xc000c02b [0x00000008]
+ | STACK 0xc000c02f [0x00000008]
+ | STACK 0xc000c033 [0x00000008]
+ | STACK 0xc000c037 [0x00000008]
+ | STACK 0xc000c03b [0x00000008]
+ | STACK 0xc000c03f [0x00000000]
+ | STACK 0xc000c043 [0xc000c057]
+ | STACK 0xc000c047 [0x00000000]
+ | STACK 0xc000c04b [0x00000000]
+ | STACK 0xc000c04f [0x00000000]
+ | STACK 0xc000c053 [0x00000000]
+ | STACK 0xc000c057 [0x00000021]
+ | STACK 0xc000c05b [0x00000000]
+ | STACK 0xc000c05f [0xc000037c] <-------- Interrupt point EIP
+ | STACK 0xc000c063 [0x00000010] <-------- Interrupt point CS
+ | STACK 0xc000c067 [0x00000202] <-------- Interrupt point EFLAGS
+ | STACK 0xc000c06b [0xc000b014]	
+
+
+ 	Restore old esp into eax - this isnt used though
+	
+	Restore 4 segment registers
+	
+	restore 8 general purpose registers
+
+	Finally add 8 to esp
+
+	Which finally gives us:
+
+ | STACK 0xc000c05f [0xc000037c] <-------- Interrupt point EIP
+ | STACK 0xc000c063 [0x00000010] <-------- Interrupt point CS
+ | STACK 0xc000c067 [0x00000202] <-------- Interrupt point EFLAGS
+ | STACK 0xc000c06b [0xc000b014]	
+
+	We can then IRET again and as if by magic, we are in back in our new task	

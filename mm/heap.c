@@ -1,0 +1,179 @@
+#include<types.h>
+#include<page.h>
+#include<system.h>
+#include<heap.h>
+#include<ds/list.h>
+
+extern system_memory_t k_sysmem;
+
+/* Kernel Heap Descriptor */
+heap_t 			k_heap;
+malloc_chain_t 		k_malloc_chain;
+struct list_head	k_temp_map; 
+
+void init_heap(void)
+{
+	/* Set Heap Base, and Current Breakpoint (end of kernel) */
+	k_heap.base=k_heap.brk=(void *)k_sysmem.kernel_end;
+
+	/* Initialise kmalloc list_head */
+	INIT_LIST_HEAD(&k_malloc_chain.chain);
+
+	/* Zero counters */
+	k_malloc_chain.total_blocks=k_malloc_chain.used_blocks=0;
+
+	/* Initialise temp_map structure for tempoary page mappings */
+	INIT_LIST_HEAD(&k_temp_map);
+}
+
+s8 kbrk(void *end)
+{
+	// LOCK
+	if((u32)end>=k_sysmem.brk_max) return -1;
+	
+	k_heap.brk=end;
+	// UNLOCK
+
+	return 0;
+}
+
+void *ksbrk(u32 bytes)
+{
+	/* If called with bytes=0, return the current brk */
+	if(!bytes) return k_heap.brk;
+
+	/* Set the breakpoint */
+	if(kbrk(k_heap.brk+bytes)==-1){
+		// TODO: This needs to return -1
+		/* That failed, panic for now! */
+		panic("Unable to kbrk - Reached max_brk!\n");		
+	}
+
+	/* Done, return the address */
+	return (void *)(k_heap.brk - bytes);
+}
+
+void *kmalloc(u32 bytes,u16 flags)
+{
+	u8 found=0;
+	u32 headlen, sob, leftover;
+	malloc_head_t *ptr=NULL, *sb=NULL;
+	struct list_head *this;
+	u32 curbrk, fillbytes;
+
+	/* Set header length */
+	headlen=sizeof(malloc_head_t);
+
+	/* Why would anyone do this? */
+	if(!bytes) return NULL;
+
+	/* Search the heap for a good size block */
+        list_for_each(this,&k_malloc_chain.chain){
+		ptr=list_entry(this,malloc_head_t,list);
+		if(bytes<=ptr->size && !(ptr->state&KMALLOC_USED)){
+			if(ptr->magic!=0xBEEF) panic("Corruption in malloc chain!");
+			found=1;
+			break;	
+		}
+        }
+
+	curbrk=ksbrk(0);
+	
+	if(!found){
+		/* Not found, we need to increase the breakpoint to fit this object in */
+		ptr=(malloc_head_t *)ksbrk(headlen+bytes);
+
+		/* Set block size */
+		ptr->size=bytes;
+
+		/* Set block magic */
+		ptr->magic=0xBEEF;
+
+		/* Zero state */
+		sb->state=0x0;
+	
+		/* Add to the chain */
+		list_add(&ptr->list,&k_malloc_chain.chain);
+
+		/* Update total blocks counter */
+		k_malloc_chain.total_blocks++;
+	}else{
+		/* Get Leftover */
+		leftover=ptr->size - bytes;
+
+		/* We don't want to split this block for tiny allocations */
+		if(leftover>=sizeof(malloc_head_t)+8){
+			/* This block needs to be split */
+			sb=(malloc_head_t *)((u32)ptr + sizeof(malloc_head_t) + bytes);
+
+			/* Set new block size */
+			sb->size=(leftover-sizeof(malloc_head_t));
+
+			/* Set block magic */
+			sb->magic=0xBEEF;
+
+			/* Zero state */
+			sb->state=0x0;
+
+			/* Adjust old block size */
+			ptr->size=bytes;
+
+			/* Add to the chain */
+			list_add(&sb->list,&k_malloc_chain.chain);
+
+			/* Update total blocks counter */
+			k_malloc_chain.total_blocks++;
+		}
+	}
+	
+	/* Set Used Flag */
+	ptr->state|=KMALLOC_USED;
+
+	/* Update used counter */
+	k_malloc_chain.used_blocks++;
+
+	/* Construct start of block pointer */
+	sob=((u32)ptr) + sizeof(malloc_head_t);
+	
+/*        list_for_each(this,&k_malloc_chain.chain){
+                kprintf("BLOCK: %d bytes, magic %X, used 0x%x\n",list_entry(this,malloc_head_t,list)->size,list_entry(this,malloc_head_t,list)->magic,list_entry(this,malloc_head_t,list)->state);
+        }*/
+
+	return (void *)sob;
+}
+
+void kfree(void *base)
+{
+	malloc_head_t *ptr;
+
+	/* Not sure why anyone would do this */
+	if(!(u32)base) return;
+
+	ptr=(malloc_head_t *)((u32)base - sizeof(malloc_head_t));
+
+	if(ptr->magic!=0xBEEF) panic("Attempt to free corrupt/non existent block!");
+
+	ptr->state&=KMALLOC_FREE;
+
+	/* Update used blocks counter */
+	k_malloc_chain.used_blocks--;
+}
+
+void dump_heap_stats(void)
+{
+	kprintf("Heap Stats:\n");
+	kprintf("  total_blocks = %d\n  used_blocks = %d\n",k_malloc_chain.total_blocks,k_malloc_chain.used_blocks);
+}
+
+void *map_temp(u32 paddr, u32 pages)
+{
+	u32 cur_brk, new_brkmax;
+
+	kprintf(" * max_brk is at: 0x%x\n",k_sysmem.brk_max);
+
+	
+
+	new_brkmax=k_sysmem.brk_max-(pages * k_sysmem.page_size);
+
+	kprintf(" * new max_brk will be 0x%x\n",new_brkmax);	
+}
